@@ -228,7 +228,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "tfhelper"
+name = "tfvarsauto"
 version = "0.1.0"
 dependencies = [
  "args",
