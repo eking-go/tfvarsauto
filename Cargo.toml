@@ -1,0 +1,13 @@
+[package]
+name = "tfvarsauto"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+hcl-rs = "0.16.7"
+args = "2.2.0"
+getopts = "0.2"
+serde_json = "1.0.111"
+regex = "1.10.3"
