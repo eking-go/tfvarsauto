@@ -1,11 +1,11 @@
-use std::io::{BufReader, Read, Write};
-use std::fs::{File, OpenOptions};
-use std::process::exit;
-use std::env;
 use args::{Args, ArgsError};
 use getopts::Occur;
-use serde_json::Value;
 use regex::Regex;
+use serde_json::Value;
+use std::env;
+use std::fs::{File, OpenOptions};
+use std::io::{BufReader, Read, Write};
+use std::process::exit;
 
 const PROGRAM_DESC: &'static str = r#"Creates variables definition and
 outputs definition from terraform code"#;
@@ -63,17 +63,14 @@ fn main() {
         r#"Ok, let start with input file: {}
 vars will be rewritten:{}
 outputs will be rewritten too: {}"#,
-        main_file,
-        vars_file,
-        outputs_file
+        main_file, vars_file, outputs_file
     );
 
     let file = File::open(&main_file).unwrap();
     let mut br = BufReader::new(file);
     let mut main_tf = String::new();
-    br.read_to_string(&mut main_tf).expect(
-        "Unable to read from file main.tf",
-    );
+    br.read_to_string(&mut main_tf)
+        .expect("Unable to read from file main.tf");
     let value: Value = hcl::from_str(&main_tf).unwrap();
 
     let mut vars_tf = OpenOptions::new()
@@ -116,8 +113,7 @@ outputs will be rewritten too: {}"#,
   description = ""
 }}
 "#,
-                                vars_str,
-                                &vs
+                                vars_str, &vs
                             );
                             vars_wrt.push(vs);
                         };
@@ -127,8 +123,10 @@ outputs will be rewritten too: {}"#,
                     let iv = cur_val.as_object();
                     let rvn = "resource".to_string();
                     let dvn = "data".to_string();
-                    if [rvn, dvn].contains(&cur_str) {
-                        let v = iv.clone();
+                    let lvn = "locals".to_string();
+                    let mvn = "module".to_string();
+                    let v = iv.clone();
+                    if [dvn].contains(&cur_str) {
                         for (rst, rn) in v.unwrap() {
                             let sr = rn.clone();
                             for srn in sr.as_object().unwrap().keys() {
@@ -145,6 +143,35 @@ outputs will be rewritten too: {}"#,
                                 );
                             }
                         }
+                    } else if [rvn].contains(&cur_str) {
+                        for (rst, rn) in v.unwrap() {
+                            let sr = rn.clone();
+                            for srn in sr.as_object().unwrap().keys() {
+                                outputs_str = format!(
+                                    r#"{os}output "{rst}_{rn}_" {{
+  value       = {rst}.{rn}.
+  description = ""
+}}
+"#,
+                                    os = outputs_str,
+                                    rst = &rst,
+                                    rn = &srn
+                                );
+                            }
+                        }
+                    } else if [lvn, mvn].contains(&cur_str) {
+                        for (rst, _) in v.unwrap() {
+                            outputs_str = format!(
+                                r#"{os}output "{rt}_{rst}_" {{
+  value       = {rt}.{rst}.
+  description = ""
+}}
+"#,
+                                os = outputs_str,
+                                rst = &rst,
+                                rt = &cur_str
+                            );
+                        }
                     };
                     val_vec.push(iv);
                 };
@@ -153,11 +180,10 @@ outputs will be rewritten too: {}"#,
         }
     };
 
-
-    vars_tf.write_all(vars_str.as_bytes()).expect(
-        "Unable to write data to vars.tf",
-    );
-    outputs_tf.write_all(outputs_str.as_bytes()).expect(
-        "Unable to write data to outputs.tf",
-    );
+    vars_tf
+        .write_all(vars_str.as_bytes())
+        .expect("Unable to write data to vars.tf");
+    outputs_tf
+        .write_all(outputs_str.as_bytes())
+        .expect("Unable to write data to outputs.tf");
 }
