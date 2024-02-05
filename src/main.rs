@@ -7,13 +7,12 @@ use std::fs::{File, OpenOptions};
 use std::io::{BufReader, Read, Write};
 use std::process::exit;
 
-const PROGRAM_DESC: &'static str = r#"Creates variables definition and
-outputs definition from terraform code"#;
-const PROGRAM_NAME: &'static str = "tfvarsauto";
-
-fn parse(input: &Vec<String>) -> Result<(String, String, String), ArgsError> {
-    let mut args = Args::new(PROGRAM_NAME, PROGRAM_DESC);
+//=================================================================================
+fn parse() -> Result<(String, String, String), ArgsError> {
+    let input_args: Vec<String> = env::args().collect();
+    let mut args = Args::new(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_DESCRIPTION"));
     args.flag("h", "help", "Print the usage menu");
+    args.flag("", "version", "Print version");
     args.option(
         "m",
         "main",
@@ -39,11 +38,16 @@ fn parse(input: &Vec<String>) -> Result<(String, String, String), ArgsError> {
         Some(String::from("outputs.tf")),
     );
 
-    args.parse(input)?;
+    args.parse(input_args)?;
 
     let help = args.value_of("help")?;
     if help {
         println!("{}", args.full_usage());
+        exit(0);
+    }
+    let version = args.value_of("version")?;
+    if version {
+        println!("{}", env!("CARGO_PKG_VERSION"));
         exit(0);
     }
     let main_f = args.value_of("main")?;
@@ -52,73 +56,102 @@ fn parse(input: &Vec<String>) -> Result<(String, String, String), ArgsError> {
     Ok((main_f, vars_f, outputs_f))
 }
 
-fn main() {
-    let args: Vec<String> = env::args().collect();
-    let (main_file, vars_file, outputs_file) = match parse(&args) {
-        Ok(d) => d,
-        Err(e) => panic!("PANIC: {:?}", e),
+//=================================================================================
+fn get_main_tf(main_file_name: String) -> Value {
+    let file = File::open(&main_file_name);
+    let file_r = match file {
+        Ok(f) => f,
+        Err(e) => panic!("Unable to open the file: {} {:?}", &main_file_name, e),
     };
 
-    println!(
-        r#"Ok, let start with input file: {}
-vars will be rewritten:{}
-outputs will be rewritten too: {}"#,
-        main_file, vars_file, outputs_file
-    );
+    let mut br = BufReader::new(file_r);
+    let mut main_tf_str = String::new();
 
-    let file = File::open(&main_file).unwrap();
-    let mut br = BufReader::new(file);
-    let mut main_tf = String::new();
-    br.read_to_string(&mut main_tf)
-        .expect("Unable to read from file main.tf");
-    let value: Value = hcl::from_str(&main_tf).unwrap();
+    match br.read_to_string(&mut main_tf_str) {
+        Ok(_) => match hcl::from_str(&main_tf_str) {
+            Ok(val) => val,
+            Err(ve) => panic!("Unable to parse the file: {} {:?}", &main_file_name, ve),
+        },
+        Err(e) => panic!("Unable to read the file: {} {:?}", &main_file_name, e),
+    }
+}
 
-    let mut vars_tf = OpenOptions::new()
+//=================================================================================
+fn write_file(fname: String, string_contents: String) {
+    let file = OpenOptions::new()
         .append(true)
         .create(true) // Optionally create the file if it doesn't already exist
-        .open(&vars_file)
-        .expect("Unable to open file vars.tf");
+        .open(&fname);
 
-    let mut outputs_tf = OpenOptions::new()
-        .append(true)
-        .create(true) // Optionally create the file if it doesn't already exist
-        .open(&outputs_file)
-        .expect("Unable to open file outputs.tf");
+    let mut file_r = match file {
+        Ok(f) => f,
+        Err(e) => panic!("Unable to open the file: {} {:?}", &fname, e),
+    };
 
+    match file_r.write_all(string_contents.as_bytes()) {
+        Ok(_) => (),
+        Err(er) => panic!("Unable to write the file: {} {:?}", &fname, er),
+    };
+}
+//=================================================================================
+fn vars_text_file(value: Value) -> String {
     let mut val_vec: Vec<Option<&serde_json::Map<std::string::String, serde_json::Value>>> =
         Vec::new();
     let mut vars_str = String::new();
-    let mut vars_wrt: Vec<String> = Vec::new();
-    let mut outputs_str = String::new();
+    let mut vars_vec: Vec<String> = Vec::new();
 
     if value.is_object() {
         let ival = value.as_object();
         val_vec.push(ival);
 
         let re = Regex::new(r"var\.([[:word:]]+)").unwrap();
-
         while val_vec.len() > 0 {
-            for (cur_str, cur_val) in val_vec.get(0).unwrap().unwrap() {
-                let cvs = cur_val.to_string();
+            for (_, cur_val) in val_vec.get(0).unwrap().unwrap() {
                 if cur_val.is_string() {
+                    let cvs = cur_val.to_string();
                     for var_n in re.captures_iter(&cvs) {
                         let vs = var_n.get(1).unwrap().as_str().to_string();
-                        if vars_wrt.contains(&vs) {
+                        if vars_vec.contains(&vs) {
                             continue;
                         } else {
-                            vars_str = format!(
-                                r#"{}variable "{}" {{
+                            vars_vec.push(vs);
+                        };
+                    }
+                } else if cur_val.is_object() {
+                    let iv = cur_val.as_object();
+                    val_vec.push(iv);
+                };
+            }
+            val_vec.swap_remove(0);
+        }
+    };
+    vars_vec.sort();
+    for var in vars_vec {
+        vars_str = format!(
+            r#"{}variable "{}" {{
   type        = string
   default     = null
   description = ""
 }}
 "#,
-                                vars_str, &vs
-                            );
-                            vars_wrt.push(vs);
-                        };
-                    }
-                };
+            vars_str, &var
+        );
+    }
+    vars_str
+}
+
+//=================================================================================
+fn outputs_text_file(value: Value) -> String {
+    let mut val_vec: Vec<Option<&serde_json::Map<std::string::String, serde_json::Value>>> =
+        Vec::new();
+    let mut outputs_str = String::new();
+
+    if value.is_object() {
+        let ival = value.as_object();
+        val_vec.push(ival);
+
+        while val_vec.len() > 0 {
+            for (cur_str, cur_val) in val_vec.get(0).unwrap().unwrap() {
                 if cur_val.is_object() {
                     let iv = cur_val.as_object();
                     let rvn = "resource".to_string();
@@ -179,11 +212,26 @@ outputs will be rewritten too: {}"#,
             val_vec.swap_remove(0);
         }
     };
+    outputs_str
+}
 
-    vars_tf
-        .write_all(vars_str.as_bytes())
-        .expect("Unable to write data to vars.tf");
-    outputs_tf
-        .write_all(outputs_str.as_bytes())
-        .expect("Unable to write data to outputs.tf");
+//=================================================================================
+fn main() {
+    let (main_file, vars_file, outputs_file) = match parse() {
+        Ok(d) => d,
+        Err(e) => panic!("Unable to parse arguments: {:?}", e),
+    };
+
+    println!(
+        r#"Ok, let start with input file: {}
+vars will be rewritten: {}
+outputs will be rewritten too: {}"#,
+        main_file, vars_file, outputs_file
+    );
+
+    let value = get_main_tf(main_file);
+    let vars_str = vars_text_file(value.clone());
+    write_file(vars_file, vars_str);
+    let outputs_str = outputs_text_file(value);
+    write_file(outputs_file, outputs_str);
 }

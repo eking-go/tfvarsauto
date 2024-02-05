@@ -1,9 +1,8 @@
 [package]
 name = "tfvarsauto"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+description = "Tool to create vars.tf with variables definition and outputs.tf with template of outputs definition from terraform code"
 
 [dependencies]
 hcl-rs = "0.16.7"
