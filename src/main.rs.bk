@@ -70,12 +70,10 @@ fn get_main_tf(main_file_name: String) -> Value {
     let mut main_tf_str = String::new();
 
     match br.read_to_string(&mut main_tf_str) {
-        Ok(_) => {
-            match hcl::from_str(&main_tf_str) {
-                Ok(val) => val,
-                Err(ve) => panic!("Unable to parse the file: {} {:?}", &main_file_name, ve),
-            }
-        }
+        Ok(_) => match hcl::from_str(&main_tf_str) {
+            Ok(val) => val,
+            Err(ve) => panic!("Unable to parse the file: {} {:?}", &main_file_name, ve),
+        },
         Err(e) => panic!("Unable to read the file: {} {:?}", &main_file_name, e),
     }
 }
@@ -131,21 +129,14 @@ fn vars_text_file(value: Value) -> String {
     vars_vec.sort();
     let mut vec_b: Vec<Block> = Vec::new();
     for var in vars_vec {
-        vec_b.push(
-            Block::builder("variable")
-                .add_label(&var)
-                .add_attribute((
-                    "type",
-                    Traversal::builder(Variable::new("string").unwrap()).build(),
-                ))
-                .add_attribute((
-                    "default",
-                    Traversal::builder(Variable::new("null").unwrap()).build(),
-                ))
-                .add_attribute(("description", ""))
-                .build(),
+        vec_b.push(Block::builder("variable")
+            .add_label(&var)
+            .add_attribute(("type", Traversal::builder(Variable::new("string").unwrap()).build()))
+            .add_attribute(("default", Traversal::builder(Variable::new("null").unwrap()).build()))
+            .add_attribute(("description", ""))
+            .build()
         );
-    }
+    };
     let vars_hcl = Body::from(vec_b);
     hcl::to_string(&vars_hcl).unwrap()
 }
@@ -236,9 +227,7 @@ fn main() {
         r#"Ok, let start with input file: {}
 vars will be rewritten: {}
 outputs will be rewritten too: {}"#,
-        main_file,
-        vars_file,
-        outputs_file
+        main_file, vars_file, outputs_file
     );
 
     let value = get_main_tf(main_file);
