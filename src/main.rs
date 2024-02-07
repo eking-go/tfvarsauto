@@ -152,77 +152,57 @@ fn vars_text_file(value: Value) -> String {
 
 //=================================================================================
 fn outputs_text_file(value: Value) -> String {
-    let mut val_vec: Vec<Option<&serde_json::Map<std::string::String, serde_json::Value>>> =
-        Vec::new();
-    let mut outputs_str = String::new();
+    let mut vec_b: Vec<Block> = Vec::new();
 
-    if value.is_object() {
-        let ival = value.as_object();
-        val_vec.push(ival);
-
-        while val_vec.len() > 0 {
-            for (cur_str, cur_val) in val_vec.get(0).unwrap().unwrap() {
-                if cur_val.is_object() {
-                    let iv = cur_val.as_object();
-                    let rvn = "resource".to_string();
-                    let dvn = "data".to_string();
-                    let lvn = "locals".to_string();
-                    let mvn = "module".to_string();
-                    let v = iv.clone();
-                    if [dvn].contains(&cur_str) {
-                        for (rst, rn) in v.unwrap() {
-                            let sr = rn.clone();
-                            for srn in sr.as_object().unwrap().keys() {
-                                outputs_str = format!(
-                                    r#"{os}output "{rt}_{rst}_{rn}_" {{
-  value       = {rt}.{rst}.{rn}.
-  description = ""
-}}
-"#,
-                                    os = outputs_str,
-                                    rt = &cur_str,
-                                    rst = &rst,
-                                    rn = &srn
-                                );
-                            }
-                        }
-                    } else if [rvn].contains(&cur_str) {
-                        for (rst, rn) in v.unwrap() {
-                            let sr = rn.clone();
-                            for srn in sr.as_object().unwrap().keys() {
-                                outputs_str = format!(
-                                    r#"{os}output "{rst}_{rn}_" {{
-  value       = {rst}.{rn}.
-  description = ""
-}}
-"#,
-                                    os = outputs_str,
-                                    rst = &rst,
-                                    rn = &srn
-                                );
-                            }
-                        }
-                    } else if [lvn, mvn].contains(&cur_str) {
-                        for (rst, _) in v.unwrap() {
-                            outputs_str = format!(
-                                r#"{os}output "{rt}_{rst}_" {{
-  value       = {rt}.{rst}.
-  description = ""
-}}
-"#,
-                                os = outputs_str,
-                                rst = &rst,
-                                rt = &cur_str
-                            );
-                        }
-                    };
-                    val_vec.push(iv);
-                };
-            }
-            val_vec.swap_remove(0);
+    for (block_type, sub_obj) in value.as_object().unwrap() {
+        for (res_name, ss_object) in sub_obj.as_object().unwrap() {
+            let rbt = "resource".to_string();
+            let dbt = "data".to_string();
+            let lbt = "locals".to_string();
+            let mbt = "module".to_string();
+            if [lbt, mbt].contains(&block_type) {
+                vec_b.push(
+                    Block::builder("output")
+                        .add_label(format!("{}_{}", &block_type, &res_name))
+                        .add_attribute((
+                            "value",
+                            Traversal::builder(
+                                Variable::new(block_type.to_string()).unwrap(),
+                            ).attr(res_name.to_string())
+                                .build(),
+                        ))
+                        .add_attribute(("description", ""))
+                        .build(),
+                );
+            };
+            if [rbt, dbt.clone()].contains(&block_type) {
+                for (res_subname, _) in ss_object.as_object().unwrap() {
+                    vec_b.push(
+                        Block::builder("output")
+                            .add_label(format!("{}_{}_{}", &block_type, &res_name, &res_subname))
+                            .add_attribute((
+                                "value",
+                                if block_type.eq(&dbt) {
+                                    Traversal::builder(
+                                        Variable::new(block_type.to_string()).unwrap(),
+                                    ).attr(res_name.to_string())
+                                        .attr(res_subname.to_string())
+                                        .build()
+                                } else {
+                                    Traversal::builder(Variable::new(res_name.to_string()).unwrap())
+                                        .attr(res_subname.to_string())
+                                        .build()
+                                },
+                            ))
+                            .add_attribute(("description", ""))
+                            .build(),
+                    );
+                }
+            };
         }
-    };
-    outputs_str
+    }
+    let outputs_hcl = Body::from(vec_b);
+    hcl::to_string(&outputs_hcl).unwrap()
 }
 
 //=================================================================================
