@@ -165,7 +165,7 @@ resource "azurerm_subnet_route_table_association" "az_assign_route" {
 }
 ```
 
-Now you have to create `vars.tf` with all variables definition and `outputs.tf` with all outputs of the module. So, you can make it with the `tfvarauto` utility. Just run it ant you will have:
+Now you have to create `vars.tf` with all variables definition and `outputs.tf` with all outputs of the module. So, you can make it with the `tfvarauto` utility. Just run it and you will have:
 
 ### vars.tf
 
